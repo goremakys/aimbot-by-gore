@@ -7,32 +7,73 @@ local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 
 local isShiftPressed = false
+local maxDistance = 400 -- Максимальная дистанция работы скрипта
+local lastAttacker = nil -- Последний игрок, который бил LocalPlayer
 
--- Функция для нахождения ближайшего игрока к курсору
+-- Отслеживание урона по LocalPlayer
+LocalPlayer.Character.Humanoid.TakingDamage:Connect(function(damage, attacker)
+    if attacker and Players:GetPlayerFromCharacter(attacker) then
+        lastAttacker = Players:GetPlayerFromCharacter(attacker)
+    end
+end)
+
+-- Функция для вычисления приоритетного игрока
+local function calculatePriority(player, distanceToCursor, distanceToPlayer)
+    local priority = 0
+
+    -- Приоритет для последнего атакующего (высший приоритет)
+    if player == lastAttacker then
+        priority = priority + 150
+    end
+
+    -- Приоритет для меньшего здоровья
+    local health = player.Character.Humanoid.Health
+    local maxHealth = player.Character.Humanoid.MaxHealth
+    priority = priority + math.max(0, 100 * (1 - health / maxHealth))
+
+    -- Приоритет для близкого физического расстояния
+    priority = priority + math.max(0, 50 - distanceToPlayer)
+
+    -- Приоритет для близкого расстояния к курсору (наименьший приоритет)
+    priority = priority + math.max(0, 25 - distanceToCursor / 2)
+
+    return priority
+end
+
+-- Функция для нахождения игрока с наивысшим приоритетом
 local function getClosestPlayerToCursor()
     local mouseLocation = UserInputService:GetMouseLocation()
-    local closestPlayer = nil
-    local shortestDistance = math.huge
+    local bestPlayer = nil
+    local highestPriority = -math.huge
 
     for _, player in pairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") and player.Character:FindFirstChild("Humanoid") then
             local character = player.Character
             local rootPart = character.HumanoidRootPart
+
+            -- Проверяем дистанцию до игрока
+            local distanceToPlayer = (rootPart.Position - Camera.CFrame.Position).Magnitude
+            if distanceToPlayer > maxDistance then
+                continue
+            end
 
             -- Проецируем позицию HumanoidRootPart игрока на экран
             local screenPoint, onScreen = Camera:WorldToViewportPoint(rootPart.Position)
 
             if onScreen then
-                local distance = (Vector2.new(screenPoint.X, screenPoint.Y) - mouseLocation).Magnitude
-                if distance < shortestDistance then
-                    shortestDistance = distance
-                    closestPlayer = player
+                local distanceToCursor = (Vector2.new(screenPoint.X, screenPoint.Y) - mouseLocation).Magnitude
+
+                -- Вычисляем приоритет игрока
+                local priority = calculatePriority(player, distanceToCursor, distanceToPlayer)
+                if priority > highestPriority then
+                    highestPriority = priority
+                    bestPlayer = player
                 end
             end
         end
     end
 
-    return closestPlayer
+    return bestPlayer
 end
 
 -- Обновление положения курсора для приклеивания к игроку
